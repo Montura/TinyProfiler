@@ -161,15 +161,91 @@ __declspec( dllexport ) void DestroyMiniProfiler(MiniProfiler* pC) {
 }
 
 #elif __linux__
-  uint64_t MiniProfiler::Impl::getThreadId() {
-    return 0;
-  }
 
-  void MiniProfiler::Impl::profileFunc(uint64_t mainThreadId) {}
+#include <unistd.h>
+#include <csignal>
 
-  std::string MiniProfiler::Impl::getSymbolName(const StkTrace& trace, int64_t i) {
-    return "";
+static void cb_sig(int signal) {
+  switch(signal) {
+    case SIGUSR1:
+      pause();
+      break;
+    case SIGUSR2:
+      break;
   }
+}
+
+uint64_t MiniProfiler::Impl::getThreadId() {
+//  sigemptyset(&act.sa_mask);
+//  act.sa_flags = 0;
+//  act.sa_handler = cb_sig;
+
+  return pthread_self();
+}
+
+void MiniProfiler::Impl::profileFunc(uint64_t mainThreadId) {
+
+  while (!shouldExit.load()) {
+    //wait 1 ms
+    sleep(1);
+
+    StkTrace trace = {0};
+    pthread_detach(mainThreadId);
+    // /* Send signal SIGNO to the given thread. */
+    pthread_kill(mainThreadId, SIGSTOP);
+//    pthread_kill(mainThreadId, SIGUSR1);
+    {
+      pthread_attr_t attr;
+      pthread_getattr_np(mainThreadId, &attr);
+
+      //CaptureStackBackTrace -- this thread  (see e.g. Heapy)
+      void* stackAddr = nullptr;
+      size_t stackSize = 0;
+      const int rc = pthread_attr_getstack(&attr, &stackAddr, &stackSize);
+      if (rc) {
+        printf("Can't get thread stack, tID = %lld", mainThreadId);
+      }
+      printf("Thread %ld: stack size = %li bytes \n", mainThreadId, stackSize);
+//      CONTEXT context;
+//      context.ContextFlags = CONTEXT_ALL;
+//      GetThreadContext(mainThread, &context);
+//
+//      STACKFRAME64 stackFrame = {0};
+//      stackFrame.AddrPC.Mode = AddrModeFlat;
+//      stackFrame.AddrStack.Mode = AddrModeFlat;
+//      stackFrame.AddrFrame.Mode = AddrModeFlat;
+//      stackFrame.AddrPC.Offset = context.Rip;
+//      stackFrame.AddrStack.Offset = context.Rsp;
+//      stackFrame.AddrFrame.Offset = context.Rbp;
+
+      for (int frame = 0; frame < 63; frame++) {
+//        BOOL ok = StackWalk64(
+//            IMAGE_FILE_MACHINE_AMD64,
+//            GetCurrentProcess(),
+//            mainThread,
+//            &stackFrame,
+//            &context,
+//            NULL,
+//            SymFunctionTableAccess64,
+//            SymGetModuleBase64,
+//            NULL
+//        );
+//        if (!ok)
+//          break;
+
+//        trace.arr[trace.cnt++] = stackFrame.AddrPC.Offset;
+      }
+    }
+//    pthread_kill(mainThreadId, SIGUSR2);
+    pthread_kill(mainThreadId, SIGCONT);
+    traces.push_back(trace);
+  }
+}
+
+std::string MiniProfiler::Impl::getSymbolName(const StkTrace &trace, int64_t i) {
+  return "";
+}
+
 #elif __APPLE__
   uint64_t MiniProfiler::Impl::getThreadId() {
     return 0;
