@@ -247,11 +247,39 @@ std::string MiniProfiler::Impl::getSymbolName(const StkTrace &trace, int64_t i) 
 }
 
 #elif __APPLE__
+
+  #include <unistd.h>
+  #include <mach/thread_act.h>
+
   uint64_t MiniProfiler::Impl::getThreadId() {
-    return 0;
+    return reinterpret_cast<uint64_t>(pthread_self());
   }
 
-  void MiniProfiler::Impl::profileFunc(uint64_t mainThreadId) {}
+  void MiniProfiler::Impl::profileFunc(uint64_t mainThreadId) {
+    while (!shouldExit.load()) {
+      //wait 1 ms
+      sleep(1);
+
+      StkTrace trace = {0};
+      kern_return_t threadSuspend = thread_suspend(mainThreadId);
+      {
+
+        void* addr = pthread_get_stackaddr_np((pthread_t) mainThreadId);
+        size_t size = pthread_get_stacksize_np((pthread_t) mainThreadId);
+        printf("addr=%p size=%zx\n", addr, size);
+
+//        thread_get
+        pthread_attr_t attr;
+        pthread_attr_getstack(&attr, &addr, &size);
+
+
+
+      }
+      kern_return_t threadResume = thread_resume(mainThreadId);
+
+      traces.push_back(trace);
+    }
+}
 
   std::string MiniProfiler::Impl::getSymbolName(const StkTrace& trace, int64_t i) {
     return "";
