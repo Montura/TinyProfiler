@@ -5,8 +5,8 @@
 #include <string>
 #include <functional>
 
-#include "profiler.h"
-#include "profiler_impl.h"
+#include "../include/profiler.h"
+#include "../include/profiler_impl.h"
 
 MiniProfiler::MiniProfiler() {
   impl = std::make_unique<Impl>();

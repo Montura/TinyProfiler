@@ -1,4 +1,4 @@
-#include "profiler.h"
+#include "../include/profiler.h"
 
 uint64_t add(int x, int y) {
   uint64_t res = 0;

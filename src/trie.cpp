@@ -2,7 +2,7 @@
 #include <iostream>
 #include <algorithm>
 
-#include "trie.h"
+#include "../include/trie.h"
 
 Trie::Trie() : trie(1), samples(1) {}
 
