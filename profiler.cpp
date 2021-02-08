@@ -1,14 +1,11 @@
-#include "profiler.h"
 #include <memory>
 #include <thread>
 #include <atomic>
 #include <vector>
-#include <map>
-#include <set>
-#include <algorithm>
 #include <string>
 #include <functional>
 
+#include "profiler.h"
 #include "profiler_impl.h"
 
 MiniProfiler::MiniProfiler() {
@@ -19,7 +16,7 @@ MiniProfiler::~MiniProfiler() {
   impl.reset();
 }
 
-MiniProfiler::Impl::Impl() : samples(1), trie(1) {
+MiniProfiler::Impl::Impl() {
   uint64_t threadId = getThreadId();
   profThread = std::make_unique<std::thread>([this, threadId]() {
     profileFunc(threadId);
@@ -35,54 +32,19 @@ MiniProfiler::Impl::~Impl() {
 
   for (const auto& trace : traces) {
     std::vector<std::string> path;
-    for (int64_t i = trace.cnt - 1; i >= 0; i--) {
+    for (int64_t i = trace.len - 1; i >= 0; --i) {
       std::string symbolName = getSymbolName(trace, i);
       path.emplace_back(symbolName);
     }
-    size_t v = 0;
-    samples[v]++;
-    for (const auto& s : path) {
-      if (trie[v].count(s) == 0) {
-        trie[v][s] = trie.size();
-        trie.emplace_back();
-        samples.push_back(0);
-      }
-      v = trie[v][s];
-      samples[v]++;
-    }
+    trie.insert(path);
   }
 
-  dumpSamples(0, 0);
-}
-
-void MiniProfiler::Impl::dumpSamples(size_t u, int indent) {
-  std::vector<std::pair<std::string, size_t>> sons(trie[u].begin(), trie[u].end());
-
-  sort(sons.begin(), sons.end(), Comparator::compare);
-
-  for (const auto& pKV : sons) {
-    size_t v = pKV.second;
-    double frac = (samples[v] + 0.0) / traces.size();
-    if (frac < 0.03)
-      continue;
-
-    for (int i = 0; i < indent; i++)
-      printf("  ");
-    printf("%4.1lf%%  : %s\n", frac * 100.0, pKV.first.c_str());
-
-    dumpSamples(v, indent + 1);
-  }
+  trie.dumpSamples(0, 0, traces.size());
 }
 
 #ifdef _WINDOWS
-
   #include <windows.h>
   #include <dbghelp.h>
-
-  #pragma comment(lib, "dbgHelp.lib")
-
-//.h --- for compiler
-//.lib/.a --- for linker
 
   uint64_t MiniProfiler::Impl::getThreadId() {
     SymInitialize(GetCurrentProcess(), NULL, TRUE);
@@ -97,6 +59,7 @@ void MiniProfiler::Impl::dumpSamples(size_t u, int indent) {
       Sleep(1);
 
       StkTrace trace = {0};
+      // Dont' use heap during between suspending and resuming thread! Deadlock is possible!
       SuspendThread(mainThread);
       {
         //CaptureStackBackTrace -- this thread  (see e.g. Heapy)
@@ -125,10 +88,11 @@ void MiniProfiler::Impl::dumpSamples(size_t u, int indent) {
               SymGetModuleBase64,
               NULL
           );
-          if (!ok)
+          if (!ok) {
             break;
+          }
 
-          trace.arr[trace.cnt++] = stackFrame.AddrPC.Offset;
+          trace.frames[trace.len++] = stackFrame.AddrPC.Offset;
         }
       }
       ResumeThread(mainThread);
@@ -140,14 +104,15 @@ void MiniProfiler::Impl::dumpSamples(size_t u, int indent) {
   }
 
   std::string MiniProfiler::Impl::getSymbolName(const StkTrace& trace, int64_t i) {
+    const uint32_t charBufferLen = 1024;
     union {
       SYMBOL_INFO symbol;
-      char trash[sizeof(SYMBOL_INFO) + 1024];
+      char symbolInfoName[sizeof(SYMBOL_INFO) + charBufferLen];
     };
     symbol.SizeOfStruct = sizeof(SYMBOL_INFO);
-    symbol.MaxNameLen = 1024;
+    symbol.MaxNameLen = charBufferLen;
     DWORD64 displ;
-    BOOL ok = SymFromAddr(GetCurrentProcess(), trace.arr[i], &displ, &symbol);
+    BOOL ok = SymFromAddr(GetCurrentProcess(), trace.frames[i], &displ, &symbol);
     return std::string(symbol.Name);
   }
 

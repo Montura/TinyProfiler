@@ -1,11 +1,13 @@
 #pragma once
 
+#include <array>
 #include "profiler.h"
+#include "trie.h"
 
 class MiniProfiler::Impl {
   struct StkTrace {
-    uint64_t cnt = 0;
-    uint64_t arr[63]{};
+    uint64_t len = 0;
+    std::array<uint64_t, 63> frames;
   };
 
   //main thread
@@ -15,20 +17,11 @@ class MiniProfiler::Impl {
   //profiling thread
   std::vector<StkTrace> traces;
 
+  Trie trie;
+
   static uint64_t getThreadId();
   static std::string getSymbolName(const StkTrace& trace, int64_t i) ;
   void profileFunc(uint64_t mainThreadId);
-
-  struct Comparator {
-    static bool compare(std::pair<std::string, size_t> const& a, std::pair<std::string, size_t> const& b) {
-      return a.second < b.second;
-    }
-  };
-
-  std::vector<std::map<std::string, size_t>> trie;
-  std::vector<int> samples;
-
-  void dumpSamples(size_t u, int indent);
 
 public:
   Impl();
